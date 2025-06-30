@@ -1,0 +1,176 @@
+#include <cstdio>
+#include <windows.h>
+#include <string>
+
+// Global variables to store typed text
+std::string typedText = "";
+bool showCursor = true;
+UINT_PTR timerId = 0;
+
+// Window procedure function - handles messages sent to the window
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_CREATE:
+            // Start a timer for cursor blinking (500ms interval)
+            timerId = SetTimer(hwnd, 1, 500, NULL);
+            return 0;
+
+        case WM_DESTROY:
+            // Clean up timer and quit
+            if (timerId) KillTimer(hwnd, timerId);
+            PostQuitMessage(0);
+            return 0;
+
+        case WM_TIMER:
+            // Toggle cursor visibility for blinking effect
+            if (wParam == 1) {
+                showCursor = !showCursor;
+                InvalidateRect(hwnd, NULL, TRUE); // Redraw window
+            }
+            return 0;
+
+        case WM_PAINT: {
+            // Window needs to be repainted
+            PAINTSTRUCT ps;
+            HDC hdc = BeginPaint(hwnd, &ps);
+
+            // Fill the window with white background
+            FillRect(hdc, &ps.rcPaint, (HBRUSH)GetStockObject(WHITE_BRUSH));
+
+            // Set text color to black
+            SetTextColor(hdc, RGB(0, 0, 0));
+            SetBkColor(hdc, RGB(255, 255, 255));
+
+            // Draw instructions
+            const char* instruction = "Click here and start typing! Press ESC to exit.";
+            TextOut(hdc, 10, 10, instruction, strlen(instruction));
+
+            // Draw the typed text
+            if (!typedText.empty()) {
+                TextOut(hdc, 10, 50, typedText.c_str(), typedText.length());
+            }
+
+            // Draw blinking cursor
+            if (showCursor) {
+                // Calculate cursor position (after the last character)
+                SIZE textSize;
+                if (!typedText.empty()) {
+                    GetTextExtentPoint32(hdc, typedText.c_str(), typedText.length(), &textSize);
+                } else {
+                    textSize.cx = 0;
+                }
+
+                // Draw cursor as a vertical line
+                HPEN pen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
+                HPEN oldPen = (HPEN)SelectObject(hdc, pen);
+
+                MoveToEx(hdc, 10 + textSize.cx, 50, NULL);
+                LineTo(hdc, 10 + textSize.cx, 70);
+
+                SelectObject(hdc, oldPen);
+                DeleteObject(pen);
+            }
+
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+
+        case WM_CHAR: {
+            // Handle character input
+            char ch = (char)wParam;
+
+            if (ch == '\b') { // Backspace
+                if (!typedText.empty()) {
+                    typedText.pop_back();
+                    InvalidateRect(hwnd, NULL, TRUE); // Redraw window
+                }
+            }
+            else if (ch == '\r' || ch == '\n') { // Enter key
+                typedText += "\r\n"; // Add new line
+                InvalidateRect(hwnd, NULL, TRUE);
+            }
+            else if (ch >= 32 && ch <= 126) { // Printable characters
+                typedText += ch;
+                InvalidateRect(hwnd, NULL, TRUE); // Redraw window
+            }
+            return 0;
+        }
+
+        case WM_KEYDOWN:
+            // Handle special keys
+            if (wParam == VK_ESCAPE) {
+                // Close window when ESC is pressed
+                PostMessage(hwnd, WM_CLOSE, 0, 0);
+            }
+            return 0;
+
+        case WM_LBUTTONDOWN: {
+            // Set focus to window when clicked (enables keyboard input)
+            SetFocus(hwnd);
+            return 0;
+        }
+
+        case WM_SETFOCUS:
+            // Window gained focus - reset cursor blink
+            showCursor = true;
+            InvalidateRect(hwnd, NULL, TRUE);
+            return 0;
+    }
+
+    // Default handling for messages we don't process
+    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+}
+
+// Main entry point for Windows applications
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    // Define the window class name
+    const char* CLASS_NAME = "MyWindowClass";
+
+    // Register the window class
+    WNDCLASS wc = {};
+    wc.lpfnWndProc = WindowProc;        // Window procedure function
+    wc.hInstance = hInstance;           // Application instance
+    wc.lpszClassName = CLASS_NAME;      // Class name
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);    // Default cursor
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); // Background color
+    wc.lpszMenuName = NULL;             // No menu
+    wc.style = CS_HREDRAW | CS_VREDRAW; // Redraw on resize
+    wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);   // Default icon
+
+    if (!RegisterClass(&wc)) {
+        MessageBox(NULL, "Window Registration Failed!", "Error", MB_ICONEXCLAMATION | MB_OK);
+        return 0;
+    }
+
+    // Create the window
+    HWND hwnd = CreateWindowEx(
+        0,                              // Extended window style
+        CLASS_NAME,                     // Window class name
+        "My Win32 Window",              // Window title
+        WS_OVERLAPPEDWINDOW,            // Window style (resizable, has title bar, etc.)
+        CW_USEDEFAULT, CW_USEDEFAULT,   // Initial position (x, y)
+        800, 600,                       // Initial size (width, height)
+        NULL,                           // Parent window
+        NULL,                           // Menu
+        hInstance,                      // Instance handle
+        NULL                            // Additional application data
+    );
+
+    if (hwnd == NULL) {
+        MessageBox(NULL, "Window Creation Failed!", "Error", MB_ICONEXCLAMATION | MB_OK);
+        return 0;
+    }
+
+    // Show and update the window
+    ShowWindow(hwnd, nCmdShow);
+    UpdateWindow(hwnd);
+
+    // Message loop - keeps the application running
+    MSG msg = {};
+    while (GetMessage(&msg, NULL, 0, 0) > 0) {
+        TranslateMessage(&msg);  // Translate virtual-key messages
+        DispatchMessage(&msg);   // Dispatch message to window procedure
+    }
+
+    return (int)msg.wParam;
+}
